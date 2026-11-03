@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SMC Chart – Twelve Data</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#070b12;--card:rgba(18,25,38,.72);--line:rgba(255,255,255,.08);--tx:#eaf0f8;--mut:#7f8ca3;--up:#2ee6a6;--dn:#ff5c6c;--gold:#f5c451;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--tx);font-family:"Space Grotesk","Segoe UI",system-ui,sans-serif}
+body{display:flex;flex-direction:column;min-height:100vh;gap:10px;padding:10px;box-sizing:border-box;
+background:radial-gradient(900px 420px at 85% -10%,rgba(245,196,81,.16),transparent 60%),radial-gradient(700px 400px at -10% 30%,rgba(46,230,166,.09),transparent 60%),var(--bg)}
+header{display:grid;grid-template-columns:1fr auto;gap:10px 14px;align-items:center;padding:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(10px)}
+.brand b{font-size:20px;letter-spacing:.3px;color:var(--gold)}.brand{display:flex;flex-direction:column;gap:2px}
+#px{font-size:26px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}#px span{font-size:14px;margin-left:8px}
+.ctl,.tg,.keybox{display:flex;gap:8px;flex-wrap:wrap;align-items:center;grid-column:1/-1}
+select,button,input{font:inherit;font-size:14px;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+button{cursor:pointer;background:linear-gradient(135deg,#f5c451,#e39b2b);color:#1b1305;font-weight:700;border:0}
+#kt{background:rgba(255,255,255,.08);color:var(--tx);font-weight:500}
+input{flex:1;min-width:160px}
+.mut{color:var(--mut);font-size:12px}
+.tg label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--mut);cursor:pointer}.tg input{accent-color:var(--gold);min-width:0;flex:0}
+#wrap{position:relative;flex:1;min-height:max(380px,66vh);width:100%;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#0b0f17}
+#chart,#ov{position:absolute;inset:0}#ov{pointer-events:none}
+#tbl{position:absolute;top:10px;left:10px;background:rgba(10,15,24,.78);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:12px;line-height:1.7;z-index:3;min-width:150px}
+#tbl div{display:flex;justify-content:space-between;gap:14px}
+.bu{color:var(--up)}.be{color:var(--dn)}
+footer{padding:2px 6px;font-size:11px;color:var(--mut)}
+</style>
+</head>
+<body>
+<header>
+ <div class="brand"><b>Gold · Smart Money</b><span class="mut" id="src">connecting…</span></div>
+ <div id="px"></div>
+ <div class="ctl"><select id="sym"><option value="XAU/USD">XAU/USD (Gold)</option><option value="XAG/USD">XAG/USD (Silver)</option><option value="EUR/USD">EUR/USD</option><option value="BTC/USD">BTC/USD</option></select><select id="tf"><option>1min</option><option>5min</option><option>15min</option><option>1h</option><option>4h</option></select><button id="kt">Key</button></div>
+ <div class="keybox" id="kbx"><input id="key" type="password" placeholder="Paste Twelve Data API key"><button id="sk">Save key</button></div>
+ <div class="tg"><label><input type="checkbox" id="tz" checked>Zones</label><label><input type="checkbox" id="ts" checked>Structure</label><label><input type="checkbox" id="tb" checked>Buy/Sell points</label><label><input type="checkbox" id="ta">Alerts</label></div>
+</header>
+<div id="wrap"><div id="chart"></div><canvas id="ov"></canvas><div id="tbl"></div></div>
+<footer>Prices from Twelve Data, refreshed by polling. Signals are rule-based and no signal is guaranteed. Backtest = past signals on the loaded candles (TP 1.5x risk, SL 1.5 ATR), not future results. Not trading advice.</footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.1.3/lightweight-charts.standalone.production.js"></script>
+<script>window.LightweightCharts||document.write('<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"><\/script>')</script>
+<script>
+if(!window.LightweightCharts){document.getElementById('wrap').innerHTML='<p style="padding:20px">The chart library could not load. Check your connection and reload.</p>';throw new Error('no chart lib')}
+// ---------- data ----------
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const R=rng(7);function gauss(){return (R()+R()+R()+R()-2)*1.7}
+const drift=i=>0.18*Math.sin(i/170)+0.12*Math.sin(i/41);
+function makeData(n){
+ const out=[];let t=Math.floor(Date.now()/60000)*60-n*60,p=4450;
+ for(let i=0;i<n;i++){const o=p,c=o+drift(i)+gauss()*1.1;
+  out.push({time:t,open:o,high:Math.max(o,c)+R()*0.7,low:Math.min(o,c)-R()*0.7,close:c});p=c;t+=60}
+ return out}
+// 1) Paste your Twelve Data key between the quotes (never share this file publicly with a real key in it).
+let API_KEY='';try{API_KEY=localStorage.getItem('td_key')||''}catch(e){}
+// 2) How often to refresh in ms. Free plans have daily credit limits, so raise this if you hit them.
+const POLL_MS=30000;
+let data=[],SYM='XAU/USD',TF='1min';
+
+// ---------- indicator ----------
+const PL=5,WIN=120;
+function pivotAt(d,p,hi){const v=hi?d[p].high:d[p].low;
+ for(let j=p-PL;j<=p+PL;j++){if(j===p)continue;if(hi?d[j].high>=v:d[j].low<=v)return false}return true}
+function calc(d){
+ const n=d.length,ev=[],sig=[];let sh=null,sl=null,trend=0,hb=true,lb=true,last=-99;
+ const atr=new Array(n).fill(0),e50=[],e200=[];let at=0,x=d[0].close,y=x;
+ for(let i=0;i<n;i++){const c=d[i],pc=i?d[i-1].close:c.open,tr=Math.max(c.high-c.low,Math.abs(c.high-pc),Math.abs(c.low-pc));
+  at=i<14?(at*i+tr)/(i+1):(at*13+tr)/14;atr[i]=at;x+=(c.close-x)*2/51;y+=(c.close-y)*2/201;e50[i]=x;e200[i]=y}
+ const pos=i=>{let h=-1e9,l=1e9;for(let j=Math.max(0,i-WIN);j<=i;j++){if(d[j].high>h)h=d[j].high;if(d[j].low<l)l=d[j].low}return (d[i].close-l)/(h-l||1)};
+ // a signal needs 4 of 5 checks: trigger, zone, strength, trend, candle direction
+ const add=(i,dir,kind)=>{if(i-last<=8||i<200)return;
+  const c=d[i],body=Math.abs(c.close-c.open),p=pos(i),wick=dir>0?Math.min(c.open,c.close)-c.low:c.high-Math.max(c.open,c.close);
+  let sc=1;
+  if(dir>0?p<0.5:p>0.5)sc++;
+  if(kind==='break'?body>0.8*atr[i]:(wick>2*body&&wick>0.6*atr[i]))sc++;
+  if(dir>0?(e50[i]>e200[i]&&c.close>e50[i]):(e50[i]<e200[i]&&c.close<e50[i]))sc++;
+  if(dir>0?c.close>c.open:c.close<c.open)sc++;
+  if(sc<4)return;
+  const risk=1.5*atr[i],e=c.close;
+  sig.push({i,dir,early:kind==='setup'?1:0,sc,e,sl:e-dir*risk,tp:e+dir*risk*1.5});last=i};
+ for(let i=2*PL;i<n;i++){
+  const p=i-PL;
+  if(pivotAt(d,p,true)){sh={i:p,price:d[p].high};hb=false}
+  if(pivotAt(d,p,false)){sl={i:p,price:d[p].low};lb=false}
+  if(sh&&!hb&&d[i].close>sh.price){ev.push({type:trend===-1?'CHoCH':'BOS',dir:1,from:sh.i,to:i,price:sh.price});trend=1;hb=true;add(i,1,'break')}
+  if(sl&&!lb&&d[i].close<sl.price){ev.push({type:trend===1?'CHoCH':'BOS',dir:-1,from:sl.i,to:i,price:sl.price});trend=-1;lb=true;add(i,-1,'break')}
+  if(last!==i){add(i,1,'setup');if(last!==i)add(i,-1,'setup')}
+ }
+ let w=0,l=0;
+ for(const s of sig){s.res='open';for(let j=s.i+1;j<Math.min(n,s.i+80);j++){
+  const hitSL=s.dir>0?d[j].low<=s.sl:d[j].high>=s.sl,hitTP=s.dir>0?d[j].high>=s.tp:d[j].low<=s.tp;
+  if(hitSL){s.res='loss';l++;break}if(hitTP){s.res='win';w++;break}}}
+ const zones=[];
+ for(const dir of [1,-1]){for(const e of ev.filter(e=>e.dir===dir).slice(-5).reverse()){
+  let k=Math.max(0,e.to-30);for(let j=k;j<=e.to;j++){if(dir>0?d[j].low<d[k].low:d[j].high>d[k].high)k=j}
+  const c=d[k],top=dir>0?Math.max(c.open,c.close):c.high,bot=dir>0?c.low:Math.min(c.open,c.close);
+  let hit=false;for(let j=e.to+1;j<n;j++){if(dir>0?d[j].low<=top:d[j].high>=bot){hit=true;break}}
+  if(!hit&&(dir>0?d[n-1].close>top:d[n-1].close<bot)){zones.push({dir,top,bot,i:k});break}}}
+ let h=-1e9,lo=1e9;for(let j=Math.max(0,n-WIN);j<n;j++){h=Math.max(h,d[j].high);lo=Math.min(lo,d[j].low)}
+ return{ev,sig,zones,hi:h,lo,trend,st:{w,l}}}
+function ema(a,k){let e=a[0];const m=2/(k+1);for(const v of a)e=v*m+e*(1-m);return e}
+function mtf(d,k){const c=[];for(let i=d.length;i-k>=0;i-=k)c.unshift(d[i-1].close);
+ return c.length<3?0:(c[c.length-1]>ema(c,8)?1:-1)}
+function pattern(d){const a=d[d.length-2],b=d[d.length-3];if(!a||!b)return 'None';
+ if(b.close<b.open&&a.close>a.open&&a.close>b.open&&a.open<b.close)return 'Bullish engulfing';
+ if(b.close>b.open&&a.close<a.open&&a.close<b.open&&a.open>b.close)return 'Bearish engulfing';
+ if(Math.abs(a.high-b.high)<0.4&&a.close<a.open)return 'Double top';
+ if(Math.abs(a.low-b.low)<0.4&&a.close>a.open)return 'Double bottom';return 'None'}
+
+// ---------- chart ----------
+const el=document.getElementById('chart'),ov=document.getElementById('ov'),cx=ov.getContext('2d');
+const chart=LightweightCharts.createChart(el,{autoSize:true,layout:{background:{color:'#0b0f17'},textColor:'#9aa7bd',fontFamily:'Space Grotesk, sans-serif'},
+ grid:{vertLines:{color:'rgba(255,255,255,.04)'},horzLines:{color:'rgba(255,255,255,.04)'}},
+ timeScale:{timeVisible:true,rightOffset:8,barSpacing:9},rightPriceScale:{borderColor:'#33393f'},
+ crosshair:{mode:0}});
+const ser=chart.addCandlestickSeries({upColor:'#2ee6a6',downColor:'#ff5c6c',borderUpColor:'#2ee6a6',borderDownColor:'#ff5c6c',wickUpColor:'#2ee6a6',wickDownColor:'#ff5c6c'});
+
+let ind=null;
+const $=id=>document.getElementById(id);
+let AC=null;const fired=new Set();
+function beep(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();o.connect(g);g.connect(AC.destination);o.frequency.value=880;g.gain.value=.15;o.start();o.stop(AC.currentTime+.4)}catch(e){}}
+function alertMe(msg){if(!$('ta').checked)return;beep();try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}
+ document.title='🔔 '+msg;try{if(Notification.permission==='granted')new Notification(msg)}catch(e){}$('src').textContent=msg}
+$('ta').onchange=()=>{if($('ta').checked){beep();try{Notification.requestPermission()}catch(e){}}else document.title='SMC Chart'};
+function checkAlerts(){if(!ind)return;const q=data[data.length-1];
+ for(const z of ind.zones){const k='z'+z.dir+data[z.i].time;if(!fired.has(k)&&q.low<=z.top&&q.high>=z.bot){fired.add(k);alertMe((z.dir>0?'Price entered BUY zone ':'Price entered SELL zone ')+z.bot.toFixed(2)+' - '+z.top.toFixed(2))}}
+ const g=ind.sig[ind.sig.length-1];if(g){const k='s'+g.dir+data[g.i].time;if(!fired.has(k)){fired.add(k);if(g.i>=data.length-2)alertMe((g.dir>0?'BUY ':'SELL ')+(g.early?'setup':'point')+' at '+g.e.toFixed(2))}}}
+let lastN=0;
+function sync(){
+ if(data.length!==lastN){lastN=data.length;ind=calc(data);
+  const mk=ind.sig.slice(-40).map(s=>s.dir>0?
+   {time:data[s.i].time,position:'belowBar',color:'#2ee6a6',shape:'arrowUp',text:s.early?'Buy setup':'Buy-point'}:
+   {time:data[s.i].time,position:'aboveBar',color:'#ff5c6c',shape:'arrowDown',text:s.early?'Sell setup':'Sell-point'});
+  ser.setMarkers($('tb').checked?mk:[]);
+  const row=(l,v)=>`<div><span>${l}</span><span class="${v>0?'bu':'be'}">${v>0?'BULLISH':'BEARISH'}</span></div>`;
+  const pt=pattern(data);
+  $('tbl').innerHTML=[5,20,80].map(k=>{const m=k*({'1min':1,'5min':5,'15min':15,'1h':60,'4h':240}[TF]);return row(m<60?m+'m':m/60+'h',mtf(data,k))}).join('')+
+   (()=>{const p=data[data.length-1].close,z=ind.zones.map(z=>({z,d:Math.abs(p-(z.dir>0?z.top:z.bot))})).sort((a,b)=>a.d-b.d)[0];
+   return z?`<div><span>Next</span><span class="${z.z.dir>0?'bu':'be'}">${z.z.dir>0?'Buy':'Sell'} zone ${z.d.toFixed(1)} away</span></div>`:''})()+`<div><span>Backtest</span><span>${ind.st.w+ind.st.l?Math.round(100*ind.st.w/(ind.st.w+ind.st.l))+'% of '+(ind.st.w+ind.st.l):'n/a'}</span></div><div><span>Pattern</span><span class="${pt.startsWith('Bull')||pt.endsWith('bottom')?'bu':pt==='None'?'':'be'}">${pt}</span></div>`}
+ const q=data[data.length-1],f=data[Math.max(0,data.length-61)];
+ $('px').innerHTML=`${q.close.toFixed(2)} <span class="${q.close>=f.close?'bu':'be'}">${(q.close-f.close>=0?'+':'')+(q.close-f.close).toFixed(2)}</span>`;
+ checkAlerts();draw()}
+let raf=0;function draw(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;drawNow()})}
+function drawNow(){
+ const w=el.clientWidth,h=el.clientHeight,dpr=devicePixelRatio||1;
+ if(ov.width!==w*dpr||ov.height!==h*dpr){ov.width=w*dpr;ov.height=h*dpr;ov.style.width=w+'px';ov.style.height=h+'px'}
+ cx.setTransform(dpr,0,0,dpr,0,0);cx.clearRect(0,0,w,h);if(!ind)return;
+ const xr=w-chart.priceScale('right').width(),Y=p=>ser.priceCoordinate(p);
+ cx.font='11px "Trebuchet MS",sans-serif';
+ if($('tz').checked){
+  const r=ind.hi-ind.lo,z=(a,b,fill,line,lab)=>{const y1=Y(a),y2=Y(b);if(y1==null||y2==null)return;
+   cx.fillStyle=fill;cx.fillRect(0,Math.min(y1,y2),xr,Math.abs(y2-y1));cx.strokeStyle=line;cx.setLineDash([6,5]);
+   cx.beginPath();cx.moveTo(0,y1);cx.lineTo(xr,y1);cx.stroke();cx.setLineDash([]);cx.fillStyle=line;cx.fillText(lab,xr-130,Math.min(y1,y2)+13)};
+  z(ind.hi,ind.hi-r*.25,'rgba(255,42,42,.18)','rgba(255,90,90,.9)','Premium '+Math.round(r*.25)+' (25%)');
+  z(ind.lo+r*.25,ind.lo,'rgba(25,227,160,.16)','rgba(25,227,160,.9)','Discount '+Math.round(r*.25)+' (25%)');
+  const m=Y(ind.lo+r/2);if(m!=null){cx.strokeStyle='rgba(180,190,200,.45)';cx.setLineDash([3,5]);cx.beginPath();cx.moveTo(0,m);cx.lineTo(xr,m);cx.stroke();cx.setLineDash([]);cx.fillStyle='#8b949e';cx.fillText('Equilibrium',xr-130,m-4)}}
+ if($('tb').checked)for(const z of ind.zones){const x1=Math.max(0,chart.timeScale().timeToCoordinate(data[z.i].time)??0),y1=Y(z.top),y2=Y(z.bot);if(y1==null||y2==null)continue;
+  const c=z.dir>0?'46,230,166':'255,92,108';cx.fillStyle=`rgba(${c},.22)`;cx.fillRect(x1,Math.min(y1,y2),xr-x1,Math.max(3,Math.abs(y2-y1)));
+  cx.strokeStyle=`rgb(${c})`;cx.setLineDash([]);cx.strokeRect(x1,Math.min(y1,y2),xr-x1,Math.max(3,Math.abs(y2-y1)));
+  cx.fillStyle=`rgb(${c})`;cx.font='bold 12px "Space Grotesk",sans-serif';cx.fillText((z.dir>0?'▲ BUY ZONE ':'▼ SELL ZONE ')+z.bot.toFixed(2)+' – '+z.top.toFixed(2),Math.max(8,xr-250),Math.min(y1,y2)-5);cx.font='11px "Space Grotesk",sans-serif'}
+ if($('tb').checked&&ind.sig.length){const g=ind.sig[ind.sig.length-1],x1=chart.timeScale().timeToCoordinate(data[g.i].time);
+  if(x1!=null)for(const [p,c,t] of [[g.e,'#c9d3e3','Entry'],[g.sl,'#ff5c6c','SL'],[g.tp,'#2ee6a6','TP']]){const y=Y(p);if(y==null)continue;
+   cx.strokeStyle=c;cx.fillStyle=c;cx.setLineDash(t==='Entry'?[]:[5,4]);cx.beginPath();cx.moveTo(x1,y);cx.lineTo(xr,y);cx.stroke();cx.setLineDash([]);cx.fillText(t+' '+p.toFixed(2),xr-92,y-4)}}
+ if($('ts').checked){
+  const ts=chart.timeScale();
+  for(const e of ind.ev.slice(-10)){
+   const x1=ts.timeToCoordinate(data[e.from].time),x2=ts.timeToCoordinate(data[e.to].time),y=Y(e.price);
+   if(x2==null||y==null||x2<0)continue;const a=Math.max(0,x1==null?0:x1);
+   const col=e.dir>0?'#19e3a0':'#ff4d4d';cx.strokeStyle=col;cx.fillStyle=col;cx.setLineDash([4,4]);
+   cx.beginPath();cx.moveTo(a,y);cx.lineTo(x2,y);cx.stroke();cx.setLineDash([]);
+   cx.textAlign='center';cx.fillText(e.type+(e.dir>0?'+':''),(a+x2)/2,y+(e.dir>0?-5:13));cx.textAlign='left'}}}
+
+['tz','ts','tb'].forEach(i=>$(i).onchange=()=>{lastN=0;sync()});
+chart.timeScale().subscribeVisibleLogicalRangeChange(draw);
+new ResizeObserver(()=>draw()).observe($('wrap'));
+
+// ---------- real data (Twelve Data) ----------
+let timer=null;const $src=$('src');
+const parse=v=>({time:Math.floor(Date.parse(v.datetime.replace(' ','T')+'Z')/1000),open:+v.open,high:+v.high,low:+v.low,close:+v.close});
+async function fetchBars(n){
+ if(!API_KEY)throw new Error('enter your API key below and tap Save key');
+ const u=`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(SYM)}&interval=${TF}&outputsize=${n}&order=ASC&timezone=UTC&apikey=${API_KEY}`;
+ const j=await (await fetch(u)).json();
+ if(j.status==='error'||!j.values)throw new Error(j.message||'no data returned');
+ return j.values.map(parse)}
+async function load(){
+ clearInterval(timer);$src.textContent='loading…';
+ try{
+  data=await fetchBars(800);lastN=0;
+  ser.setData(data);chart.timeScale().setVisibleLogicalRange({from:data.length-110,to:data.length+8});
+  sync();$src.textContent='live (updates every '+POLL_MS/1000+'s)';
+  timer=setInterval(async()=>{try{
+   for(const c of await fetchBars(3)){const l=data[data.length-1];
+    if(c.time===l.time)data[data.length-1]=c;else if(c.time>l.time)data.push(c);else continue;ser.update(c)}
+   sync();$src.textContent='live · '+new Date().toLocaleTimeString()}
+   catch(e){$src.textContent='refresh failed: '+e.message}},POLL_MS);
+ }catch(e){$src.textContent='Could not load data: '+e.message}
+}
+$('sym').onchange=e=>{SYM=e.target.value;load()};$('tf').onchange=e=>{TF=e.target.value;load()};
+$('kt').onclick=()=>{const k=$('kbx');k.style.display=k.style.display==='none'?'flex':'none'};
+if(API_KEY)$('kbx').style.display='none';
+$('sk').onclick=()=>{$('kbx').style.display='none';API_KEY=$('key').value.trim();try{localStorage.setItem('td_key',API_KEY)}catch(e){}load()};
+if(API_KEY)$('key').value=API_KEY;
+load();
+</script>
+</body>
+</html>
