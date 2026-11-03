@@ -1,0 +1,3 @@
+{
+ "name":"smc-alert-server","version":"1.0.0","main":"alert-server.js","scripts":{"start":"node alert-server.js"},"engines":{"node":">=18"}
+}
